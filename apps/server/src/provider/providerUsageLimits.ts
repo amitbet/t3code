@@ -79,6 +79,24 @@ export function applyUsageLimitsUpdate(input: {
   let changed = false;
   for (const window of update.windows) {
     const existing = merged.get(window.id);
+    const incomingReset = window.resetsAt;
+    const existingReset = existing?.resetsAt;
+    // Usage is monotonic inside one quota window. Sparse notifications from
+    // older Codex sessions can arrive after a newer snapshot, so never rewind
+    // a reset boundary or lower a percentage unless the provider identifies a
+    // later reset window. A full probe can still make authoritative corrections.
+    if (
+      existing !== undefined &&
+      ((incomingReset !== undefined &&
+        existingReset !== undefined &&
+        incomingReset < existingReset) ||
+        (window.usedPercent < existing.usedPercent &&
+          (incomingReset === undefined ||
+            existingReset === undefined ||
+            incomingReset === existingReset)))
+    ) {
+      continue;
+    }
     const next: ServerProviderUsageWindow = {
       ...window,
       usedPercent: clampPercent(window.usedPercent),
@@ -125,13 +143,10 @@ function usageWindowEquals(a: ServerProviderUsageWindow, b: ServerProviderUsageW
  * established, so the last good snapshot stays; `unsupported` is
  * authoritative and replaces them.
  *
- * A successful probe replaces the published windows outright, including any
- * runtime update that landed while it was running. That is a deliberate
- * trade-off: the Codex and Claude reads take a few seconds at most, the
- * probe is the fresher full read in every case except that window, and the
- * per-window epoch bookkeeping needed to reconcile the two was more code
- * than the sub-second regression it prevented. The next runtime event
- * corrects it.
+ * A provider that does not include usage in its status probe leaves the last
+ * good snapshot alone. This matters for Cursor, whose usage comes from a
+ * separate best-effort dashboard read. A successful probe also cannot replace
+ * a runtime update observed after that probe began.
  */
 export function resolveUsageLimitsAfterProbe(input: {
   readonly published: ServerProviderUsageLimits | undefined;
@@ -139,6 +154,17 @@ export function resolveUsageLimitsAfterProbe(input: {
 }): ServerProviderUsageLimits | undefined {
   const { published, probed } = input;
   if (probed?.unavailable?.reason === "probeFailed" && published && !published.unavailable) {
+    return published;
+  }
+  if (probed === undefined) {
+    return published;
+  }
+  if (
+    published !== undefined &&
+    published.unavailable === undefined &&
+    probed.unavailable === undefined &&
+    published.checkedAt > probed.checkedAt
+  ) {
     return published;
   }
   return probed;

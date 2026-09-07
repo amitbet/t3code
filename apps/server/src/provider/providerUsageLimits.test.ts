@@ -61,6 +61,53 @@ describe("applyUsageLimitsUpdate", () => {
       applyUsageLimitsUpdate({ previous: published, checkedAt, update: { windows: [] } }),
     ).toBe(published);
   });
+
+  it("ignores a stale reset window and a regression within the current window", () => {
+    const staleReset = applyUsageLimitsUpdate({
+      previous: published,
+      checkedAt: "2026-09-03T12:01:00.000Z",
+      update: {
+        windows: [
+          {
+            ...session,
+            usedPercent: 95,
+            resetsAt: "2026-09-03T13:00:00.000Z",
+          },
+        ],
+      },
+    });
+    expect(staleReset).toBe(published);
+
+    const regressed = applyUsageLimitsUpdate({
+      previous: published,
+      checkedAt: "2026-09-03T12:01:00.000Z",
+      update: {
+        windows: [{ id: "five_hour", kind: "session", label: "Session", usedPercent: 5 }],
+      },
+    });
+    expect(regressed).toBe(published);
+  });
+
+  it("accepts a lower percentage after the provider advances the reset window", () => {
+    expect(
+      applyUsageLimitsUpdate({
+        previous: published,
+        checkedAt: "2026-09-03T14:00:01.000Z",
+        update: {
+          windows: [
+            {
+              ...session,
+              usedPercent: 5,
+              resetsAt: "2026-09-03T19:00:00.000Z",
+            },
+          ],
+        },
+      }),
+    ).toEqual({
+      checkedAt: "2026-09-03T14:00:01.000Z",
+      windows: [{ ...session, usedPercent: 5, resetsAt: "2026-09-03T19:00:00.000Z" }, weekly],
+    });
+  });
 });
 
 describe("resolveUsageLimitsAfterProbe", () => {
@@ -70,5 +117,25 @@ describe("resolveUsageLimitsAfterProbe", () => {
     expect(resolveUsageLimitsAfterProbe({ published, probed: failed })).toBe(published);
     expect(resolveUsageLimitsAfterProbe({ published, probed: unsupported })).toBe(unsupported);
     expect(resolveUsageLimitsAfterProbe({ published: undefined, probed: failed })).toBe(failed);
+  });
+
+  it("keeps runtime-only usage when a provider status probe omits it", () => {
+    expect(resolveUsageLimitsAfterProbe({ published, probed: undefined })).toBe(published);
+  });
+
+  it("does not let a probe overwrite a runtime update that landed after it began", () => {
+    const runtimeUpdate = {
+      ...published,
+      checkedAt: "2026-09-03T12:00:05.000Z",
+      windows: [{ ...session, usedPercent: 60 }, weekly],
+    };
+    const olderProbe = {
+      ...published,
+      checkedAt: "2026-09-03T12:00:01.000Z",
+      windows: [{ ...session, usedPercent: 10 }, weekly],
+    };
+    expect(resolveUsageLimitsAfterProbe({ published: runtimeUpdate, probed: olderProbe })).toBe(
+      runtimeUpdate,
+    );
   });
 });
