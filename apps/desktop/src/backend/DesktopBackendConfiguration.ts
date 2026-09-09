@@ -494,6 +494,10 @@ const resolvePrimaryStartConfig = Effect.fn("desktop.backendConfiguration.resolv
     // the running payload instead of the version baked into the bundle at build.
     const activePayloadVersion = yield* DesktopPayloadLayout.readActivePayloadVersion;
     const serverVersion = Option.getOrElse(activePayloadVersion, () => environment.appVersion);
+    const bundledFffNodeModulePath = environment.path.join(
+      environment.serverRoot,
+      "node_modules/@ff-labs/fff-node/dist/src/index.js",
+    );
 
     const bootstrap = {
       mode: "desktop" as const,
@@ -527,6 +531,10 @@ const resolvePrimaryStartConfig = Effect.fn("desktop.backendConfiguration.resolv
         // Read by the server's ServerEnvironment (resolveServerVersion) so its
         // advertised version reflects the applied payload, not the bundled one.
         T3CODE_SERVER_VERSION: serverVersion,
+        // Hot-update payloads live under the user's data directory and only
+        // contain server dist files. Native modules stay in the installed
+        // shell, so the payload cannot resolve fff from its own location.
+        T3CODE_DESKTOP_FFF_NODE_MODULE_PATH: bundledFffNodeModulePath,
       },
       // Primary wants process.env (PATH, dev-runner's T3CODE_HOME, etc.).
       extendEnv: true,

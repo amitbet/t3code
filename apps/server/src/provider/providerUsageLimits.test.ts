@@ -88,6 +88,46 @@ describe("applyUsageLimitsUpdate", () => {
     expect(regressed).toBe(published);
   });
 
+  it("treats a reset time that only jitters by seconds as the same window", () => {
+    // A status probe computed the boundary two seconds later than the turn
+    // notifications do. Those notifications must still land, and the snapshot
+    // keeps the boundary it already had so nothing churns.
+    const probed = {
+      checkedAt,
+      windows: [
+        { ...session, usedPercent: 9, resetsAt: "2026-09-03T14:00:02.000Z" },
+        { ...weekly, usedPercent: 32, resetsAt: "2026-09-09T14:00:02.000Z" },
+      ],
+    };
+    const next = applyUsageLimitsUpdate({
+      previous: probed,
+      checkedAt: "2026-09-03T12:30:00.000Z",
+      update: {
+        windows: [
+          { ...session, usedPercent: 97, resetsAt: "2026-09-03T14:00:00.000Z" },
+          { ...weekly, usedPercent: 46, resetsAt: "2026-09-09T14:00:00.000Z" },
+        ],
+      },
+    });
+    expect(next).toEqual({
+      checkedAt: "2026-09-03T12:30:00.000Z",
+      windows: [
+        { ...session, usedPercent: 97, resetsAt: "2026-09-03T14:00:02.000Z" },
+        { ...weekly, usedPercent: 46, resetsAt: "2026-09-09T14:00:02.000Z" },
+      ],
+    });
+    // The jittered repeat of an unchanged reading is still a no-op.
+    expect(
+      applyUsageLimitsUpdate({
+        previous: next,
+        checkedAt: "2026-09-03T12:30:05.000Z",
+        update: {
+          windows: [{ ...session, usedPercent: 97, resetsAt: "2026-09-03T14:00:01.000Z" }],
+        },
+      }),
+    ).toBe(next);
+  });
+
   it("accepts a lower percentage after the provider advances the reset window", () => {
     expect(
       applyUsageLimitsUpdate({

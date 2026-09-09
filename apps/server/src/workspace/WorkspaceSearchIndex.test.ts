@@ -15,7 +15,24 @@ import * as WorkspaceSearchIndex from "./WorkspaceSearchIndex.ts";
 
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.unstubAllEnvs();
 });
+
+it.effect("loads fff from the desktop shell path for hot-update payloads", () =>
+  Effect.gen(function* () {
+    vi.stubEnv("T3CODE_DESKTOP_FFF_NODE_MODULE_PATH", "/missing/fff-node/index.js");
+
+    const error = yield* Effect.flip(
+      Effect.scoped(WorkspaceSearchIndex.make("/workspace/project")),
+    );
+
+    expect(error).toMatchObject({
+      _tag: "WorkspaceSearchIndexCreateFailed",
+      cwd: "/workspace/project",
+      reason: "Failed to load the native workspace search index module.",
+    });
+  }),
+);
 
 it.effect("scans only the requested workspace root", () =>
   Effect.gen(function* () {

@@ -232,6 +232,10 @@ describe("DesktopBackendConfiguration", () => {
         assert.equal(first.cwd, environment.backendCwd);
         assert.equal(first.captureOutput, true);
         assert.equal(first.env.ELECTRON_RUN_AS_NODE, "1");
+        assert.equal(
+          first.env.T3CODE_DESKTOP_FFF_NODE_MODULE_PATH,
+          `${environment.serverRoot}/node_modules/@ff-labs/fff-node/dist/src/index.js`,
+        );
         assert.isUndefined(first.env.T3CODE_PORT);
         assert.isUndefined(first.env.T3CODE_MODE);
         assert.isUndefined(first.env.T3CODE_DESKTOP_LAN_HOST);
@@ -292,6 +296,10 @@ describe("DesktopBackendConfiguration", () => {
         path.join(resourcesPath, "server.asar/apps/server/dist/bin.mjs"),
       );
       assert.equal(config.env.ELECTRON_RUN_AS_NODE, "1");
+      assert.equal(
+        config.env.T3CODE_DESKTOP_FFF_NODE_MODULE_PATH,
+        path.join(resourcesPath, "server.asar/node_modules/@ff-labs/fff-node/dist/src/index.js"),
+      );
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );
 

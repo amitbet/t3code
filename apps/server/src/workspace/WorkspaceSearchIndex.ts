@@ -12,6 +12,9 @@ import type {
   Result,
   SearchResult,
 } from "@ff-labs/fff-node";
+// @effect-diagnostics nodeBuiltinImport:off
+import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -35,6 +38,11 @@ const WORKSPACE_INDEX_SCAN_TIMEOUT_MS = 15_000;
 const WORKSPACE_INDEX_IDLE_TTL = "15 minutes";
 const CONTENT_SEARCH_TIME_BUDGET_MS = 250;
 const CONTENT_SEARCH_MAX_MATCHES_PER_FILE = 100;
+
+// Desktop hot-update payloads contain only the bundled server files. Native
+// runtime packages remain in the installed shell, so a payload must import fff
+// from that stable location instead of resolving it beside its own bin.mjs.
+const DESKTOP_FFF_NODE_MODULE_PATH = "T3CODE_DESKTOP_FFF_NODE_MODULE_PATH";
 
 export class WorkspaceSearchIndexCreateFailed extends Schema.TaggedErrorClass<WorkspaceSearchIndexCreateFailed>()(
   "WorkspaceSearchIndexCreateFailed",
@@ -130,6 +138,23 @@ export class WorkspaceSearchIndex extends Context.Service<
 function toPosixPath(input: string): string {
   return input.replaceAll("\\", "/");
 }
+
+function bundledDesktopFffNodeModulePath(): string | undefined {
+  const resourcesPath = Reflect.get(process, "resourcesPath");
+  if (process.env.ELECTRON_RUN_AS_NODE !== "1" || typeof resourcesPath !== "string") {
+    return undefined;
+  }
+  const serverArchive = process.platform === "win32" ? "server.asar" : "app.asar";
+  return join(resourcesPath, serverArchive, "node_modules/@ff-labs/fff-node/dist/src/index.js");
+}
+
+const loadFileFinderModule = (): Promise<typeof import("@ff-labs/fff-node")> => {
+  const desktopModulePath =
+    process.env[DESKTOP_FFF_NODE_MODULE_PATH] ?? bundledDesktopFffNodeModulePath();
+  return desktopModulePath
+    ? (import(pathToFileURL(desktopModulePath).href) as Promise<typeof import("@ff-labs/fff-node")>)
+    : import("@ff-labs/fff-node");
+};
 
 function trimDirectorySeparator(input: string): string {
   return input.endsWith("/") ? input.slice(0, -1) : input;
@@ -305,7 +330,7 @@ const createFinder = Effect.fn("WorkspaceSearchIndex.createFinder")(function* (
   variant: WorkspaceSearchIndexVariant,
 ) {
   const fffNode = yield* Effect.tryPromise({
-    try: () => import("@ff-labs/fff-node"),
+    try: loadFileFinderModule,
     catch: (cause) =>
       new WorkspaceSearchIndexCreateFailed({
         cwd,
